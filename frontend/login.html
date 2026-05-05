@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>登录 - 记账助手</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .login-container {
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: linear-gradient(135deg, #f5f0ff 0%, #e8d9ff 100%);
+        }
+        .login-card {
+            background: white;
+            border-radius: 24px;
+            padding: 40px;
+            width: 100%;
+            max-width: 400px;
+            box-shadow: 0 20px 40px rgba(156, 39, 176, 0.2);
+        }
+        .login-card h2 {
+            text-align: center;
+            color: #9c27b0;
+            margin-bottom: 30px;
+        }
+        .tab-buttons {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+        }
+        .tab-btn {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            background: #f0f0f0;
+            cursor: pointer;
+            border-radius: 25px;
+            font-size: 16px;
+            transition: all 0.3s;
+        }
+        .tab-btn.active {
+            background: #9c27b0;
+            color: white;
+        }
+        .form-panel {
+            display: none;
+        }
+        .form-panel.active {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-card">
+            <h2>💰 记账助手</h2>
+            
+            <div class="tab-buttons">
+                <button class="tab-btn active" onclick="switchTab('login')">登录</button>
+                <button class="tab-btn" onclick="switchTab('register')">注册</button>
+            </div>
+            
+            <!-- 登录表单 -->
+            <div id="loginPanel" class="form-panel active">
+                <form onsubmit="handleLogin(event)">
+                    <div class="form-group">
+                        <label>用户名</label>
+                        <input type="text" id="loginUsername" required>
+                    </div>
+                    <div class="form-group">
+                        <label>密码</label>
+                        <input type="password" id="loginPassword" required>
+                    </div>
+                    <button type="submit" class="btn" style="width: 100%; margin-top: 20px;">登 录</button>
+                </form>
+            </div>
+            
+            <!-- 注册表单 -->
+            <div id="registerPanel" class="form-panel">
+                <form onsubmit="handleRegister(event)">
+                    <div class="form-group">
+                        <label>用户名</label>
+                        <input type="text" id="regUsername" required>
+                    </div>
+                    <div class="form-group">
+                        <label>密码</label>
+                        <input type="password" id="regPassword" required>
+                    </div>
+                    <div class="form-group">
+                        <label>邮箱（选填）</label>
+                        <input type="email" id="regEmail">
+                    </div>
+                    <button type="submit" class="btn" style="width: 100%; margin-top: 20px;">注 册</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <script src="script.js"></script>
+    <script>
+        function switchTab(tab) {
+            const loginPanel = document.getElementById('loginPanel');
+            const registerPanel = document.getElementById('registerPanel');
+            const btns = document.querySelectorAll('.tab-btn');
+            
+            if (tab === 'login') {
+                loginPanel.classList.add('active');
+                registerPanel.classList.remove('active');
+                btns[0].classList.add('active');
+                btns[1].classList.remove('active');
+            } else {
+                loginPanel.classList.remove('active');
+                registerPanel.classList.add('active');
+                btns[0].classList.remove('active');
+                btns[1].classList.add('active');
+            }
+        }
+        
+        async function handleLogin(event) {
+            event.preventDefault();
+            const username = document.getElementById('loginUsername').value;
+            const password = document.getElementById('loginPassword').value;
+            
+            const result = await login(username, password);
+            if (result.code === 200) {
+                showMessage('登录成功！');
+                setTimeout(() => {
+                    window.location.href = 'index.html';
+                }, 1000);
+            } else {
+                showMessage(result.message || '登录失败', true);
+            }
+        }
+        
+        async function handleRegister(event) {
+            event.preventDefault();
+            const username = document.getElementById('regUsername').value;
+            const password = document.getElementById('regPassword').value;
+            const email = document.getElementById('regEmail').value;
+            
+            const result = await register(username, password, email);
+            if (result.code === 201) {
+                showMessage('注册成功！请登录');
+                switchTab('login');
+                document.getElementById('loginUsername').value = username;
+                document.getElementById('regUsername').value = '';
+                document.getElementById('regPassword').value = '';
+                document.getElementById('regEmail').value = '';
+            } else {
+                showMessage(result.message || '注册失败', true);
+            }
+        }
+        
+        // 如果已登录，直接跳转
+        if (isLoggedIn()) {
+            window.location.href = 'index.html';
+        }
+    </script>
+</body>
+</html>

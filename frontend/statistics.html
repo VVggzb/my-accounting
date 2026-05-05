@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>统计 - 记账助手</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+</head>
+<body>
+    <div class="nav-bar">
+        <h1>💰 记账助手</h1>
+        <div class="nav-links">
+            <a href="index.html">账本</a>
+            <a href="statistics.html" class="active">统计</a>
+            <a href="#" onclick="logout()">退出</a>
+        </div>
+    </div>
+    
+    <div class="container">
+        <!-- 时间范围选择 -->
+        <div class="card">
+            <div class="filter-bar">
+                <div class="form-group">
+                    <label>开始日期</label>
+                    <input type="date" id="startDate">
+                </div>
+                <div class="form-group">
+                    <label>结束日期</label>
+                    <input type="date" id="endDate">
+                </div>
+                <button class="btn" onclick="loadAllStats()">查询</button>
+                <button class="btn btn-outline" onclick="setThisMonth()">本月</button>
+                <button class="btn btn-outline" onclick="setLastMonth()">上月</button>
+                <button class="btn btn-outline" onclick="setThisYear()">今年</button>
+            </div>
+        </div>
+        
+        <!-- 核心数据卡片 -->
+        <div class="stats-grid" id="statsCards">
+            <div class="stat-card">
+                <h3>总收入</h3>
+                <div class="value income" id="totalIncome">¥0</div>
+            </div>
+            <div class="stat-card">
+                <h3>总支出</h3>
+                <div class="value expense" id="totalExpense">¥0</div>
+            </div>
+            <div class="stat-card">
+                <h3>结余</h3>
+                <div class="value" id="balance">¥0</div>
+            </div>
+            <div class="stat-card">
+                <h3>日均支出</h3>
+                <div class="value" id="dailyAvg">¥0</div>
+            </div>
+            <div class="stat-card">
+                <h3>总笔数</h3>
+                <div class="value" id="totalCount">0</div>
+            </div>
+            <div class="stat-card">
+                <h3>待报销</h3>
+                <div class="value expense" id="pendingReimbursement">¥0</div>
+            </div>
+        </div>
+        
+        <!-- 支出 vs 收入对比 -->
+        <div class="chart-container">
+            <h3>收支对比</h3>
+            <div id="comparisonChart" class="chart-box"></div>
+        </div>
+        
+        <!-- 分类支出分析（环形图）-->
+        <div class="chart-container">
+            <h3>分类支出分析</h3>
+            <div id="categoryChart" class="chart-box"></div>
+        </div>
+        
+        <!-- 趋势图 -->
+        <div class="chart-container">
+            <h3>支出趋势</h3>
+            <div id="trendChart" class="chart-box"></div>
+        </div>
+        
+        <!-- 月份对比 -->
+        <div class="card">
+            <h3>月份对比</h3>
+            <div class="filter-bar" style="margin-top: 10px;">
+                <div class="form-group">
+                    <label>选择月份</label>
+                    <input type="month" id="compareMonth">
+                </div>
+                <button class="btn" onclick="loadCompare()">查询对比</button>
+            </div>
+            <div id="compareResult" style="margin-top: 20px;">
+                <p style="text-align: center; color: #888;">请选择月份查看对比</p>
+            </div>
+        </div>
+    </div>
+    
+    <script src="script.js"></script>
+    <script>
+        let categoryChart = null;
+        let trendChart = null;
+        let comparisonChart = null;
+        
+        // 获取当月第一天
+        function getMonthStart() {
+            const date = new Date();
+            date.setDate(1);
+            return date.toISOString().split('T')[0];
+        }
+        
+        // 获取当月最后一天
+        function getMonthEnd() {
+            const date = new Date();
+            date.setMonth(date.getMonth() + 1);
+            date.setDate(0);
+            return date.toISOString().split('T')[0];
+        }
+        
+        // 获取上月第一天
+        function getLastMonthStart() {
+            const date = new Date();
+            date.setMonth(date.getMonth() - 1);
+            date.setDate(1);
+            return date.toISOString().split('T')[0];
+        }
+        
+        // 获取上月最后一天
+        function getLastMonthEnd() {
+            const date = new Date();
+            date.setDate(0);
+            return date.toISOString().split('T')[0];
+        }
+        
+        // 获取今年第一天
+        function getYearStart() {
+            return new Date().getFullYear() + '-01-01';
+        }
+        
+        // 获取今年最后一天
+        function getYearEnd() {
+            return new Date().getFullYear() + '-12-31';
+        }
+        
+        // 设置本月
+        function setThisMonth() {
+            document.getElementById('startDate').value = getMonthStart();
+            document.getElementById('endDate').value = getMonthEnd();
+            loadAllStats();
+        }
+        
+        // 设置上月
+        function setLastMonth() {
+            document.getElementById('startDate').value = getLastMonthStart();
+            document.getElementById('endDate').value = getLastMonthEnd();
+            loadAllStats();
+        }
+        
+        // 设置今年
+        function setThisYear() {
+            document.getElementById('startDate').value = getYearStart();
+            document.getElementById('endDate').value = getYearEnd();
+            loadAllStats();
+        }
+        
+        // 加载所有统计数据
+        async function loadAllStats() {
+            await loadOverview();
+            await loadCategoryStats();
+            await loadTrend();
+        }
+        
+        // 加载核心数据概览
+        async function loadOverview() {
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+            
+            if (!startDate || !endDate) {
+                console.log('请选择日期范围');
+                return;
+            }
+            
+            const result = await getOverview(startDate, endDate);
+            console.log('概览数据:', result);
+            
+            if (result.code === 200 && result.data) {
+                document.getElementById('totalIncome').innerHTML = `¥${result.data.total_income.toFixed(2)}`;
+                document.getElementById('totalExpense').innerHTML = `¥${result.data.total_expense.toFixed(2)}`;
+                document.getElementById('balance').innerHTML = `¥${result.data.balance.toFixed(2)}`;
+                document.getElementById('dailyAvg').innerHTML = `¥${result.data.daily_avg_expense.toFixed(2)}`;
+                document.getElementById('totalCount').innerHTML = result.data.total_count;
+                document.getElementById('pendingReimbursement').innerHTML = `¥${result.data.pending_reimbursement.toFixed(2)}`;
+                
+                // 更新收支对比图表
+                updateComparisonChart(result.data.total_income, result.data.total_expense);
+            } else {
+                console.log('加载概览失败:', result);
+            }
+        }
+        
+        // 更新收支对比图表
+        function updateComparisonChart(income, expense) {
+            if (comparisonChart) {
+                comparisonChart.dispose();
+            }
+            const chartDom = document.getElementById('comparisonChart');
+            comparisonChart = echarts.init(chartDom);
+            
+            const option = {
+                tooltip: {
+                    trigger: 'axis',
+                    axisPointer: { type: 'shadow' }
+                },
+                grid: {
+                    left: '10%',
+                    right: '10%',
+                    top: '10%',
+                    bottom: '5%',
+                    containLabel: true
+                },
+                xAxis: {
+                    type: 'category',
+                    data: ['收入', '支出'],
+                    axisLabel: {
+                        fontSize: 14,
+                        fontWeight: 'bold'
+                    }
+                },
+                yAxis: {
+                    type: 'value',
+                    name: '金额 (¥)',
+                    nameLocation: 'middle',
+                    nameGap: 45
+                },
+                series: [
+                    {
+                        name: '金额',
+                        type: 'bar',
+                        data: [
+                            { value: income, itemStyle: { color: '#4caf50' } },
+                            { value: expense, itemStyle: { color: '#f44336' } }
+                        ],
+                        label: {
+                            show: true,
+                            position: 'top',
+                            formatter: '¥{c}',
+                            fontWeight: 'bold'
+                        },
+                        barWidth: '60%'
+                    }
+                ]
+            };
+            comparisonChart.setOption(option);
+        }
+        
+        // 加载分类统计（环形图）
+        async function loadCategoryStats() {
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+            
+            const result = await getCategoryStats(startDate, endDate, 'expense');
+            console.log('分类统计:', result);
+            
+            if (result.code === 200 && result.data && result.data.categories) {
+                updateCategoryChart(result.data.categories, result.data.total);
+            } else {
+                console.log('加载分类统计失败:', result);
+            }
+        }
+        
+        // 更新环形图
+        function updateCategoryChart(categories, total) {
+            if (categoryChart) {
+                categoryChart.dispose();
+            }
+            const chartDom = document.getElementById('categoryChart');
+            categoryChart = echarts.init(chartDom);
+            
+            if (!categories || categories.length === 0) {
+                categoryChart.setOption({
+                    title: {
+                        text: '暂无数据',
+                        left: 'center',
+                        top: 'center',
+                        textStyle: { color: '#999', fontSize: 14 }
+                    }
+                });
+                return;
+            }
+            
+            const data = categories.map(cat => ({
+                name: `${cat.icon} ${cat.category_name}`,
+                value: cat.amount
+            }));
+            
+            const option = {
+                tooltip: {
+                    trigger: 'item',
+                    formatter: '{b}: ¥{c} ({d}%)'
+                },
+                legend: {
+                    orient: 'vertical',
+                    left: 'left',
+                    type: 'scroll',
+                    pageIconColor: '#9c27b0',
+                    textStyle: { fontSize: 12 }
+                },
+                series: [
+                    {
+                        name: '支出分类',
+                        type: 'pie',
+                        radius: ['40%', '70%'],
+                        avoidLabelOverlap: false,
+                        itemStyle: {
+                            borderRadius: 10,
+                            borderColor: '#fff',
+                            borderWidth: 2
+                        },
+                        label: {
+                            show: true,
+                            formatter: '{d}%',
+                            fontWeight: 'bold'
+                        },
+                        emphasis: {
+                            label: {
+                                show: true,
+                                fontSize: 16,
+                                fontWeight: 'bold'
+                            }
+                        },
+                        data: data,
+                        color: ['#9c27b0', '#ce93d8', '#e1bee7', '#f3e5f5', '#ba68c8', '#ab47bc', '#8e24aa', '#6a1b9a', '#4a148c', '#7b1fa2']
+                    }
+                ]
+            };
+            categoryChart.setOption(option);
+        }
+        
+        // 加载趋势数据
+        async function loadTrend() {
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+            
+            const result = await getTrend(startDate, endDate, 'day', 'expense');
+            console.log('趋势数据:', result);
+            
+            if (result.code === 200 && result.data) {
+                updateTrendChart(result.data);
+            } else {
+                console.log('加载趋势失败:', result);
+            }
+        }
+        
+        // 更新趋势图
+        function updateTrendChart(trendData) {
+            if (trendChart) {
+                trendChart.dispose();
+            }
+            const chartDom = document.getElementById('trendChart');
+            trendChart = echarts.init(chartDom);
+            
+            if (!trendData.data || trendData.data.length === 0) {
+                trendChart.setOption({
+                    title: {
+                        text: '暂无数据',
+                        left: 'center',
+                        top: 'center',
+                        textStyle: { color: '#999', fontSize: 14 }
+                    }
+                });
+                return;
+            }
+            
+            const dates = trendData.data.map(item => item.date);
+            const amounts = trendData.data.map(item => item.amount);
+            const avgLine = trendData.avg_line;
+            
+            const option = {
+                tooltip: {
+                    trigger: 'axis',
+                    formatter: '{b}<br/>支出: ¥{c}'
+                },
+                grid: {
+                    left: '10%',
+                    right: '10%',
+                    top: '15%',
+                    bottom: '5%',
+                    containLabel: true
+                },
+                xAxis: {
+                    type: 'category',
+                    data: dates,
+                    axisLabel: {
+                        rotate: dates.length > 31 ? 45 : 0,
+                        interval: dates.length > 60 ? 'auto' : 0
+                    }
+                },
+                yAxis: {
+                    type: 'value',
+                    name: '金额 (¥)',
+                    nameLocation: 'middle',
+                    nameGap: 45
+                },
+                series: [
+                    {
+                        name: '日支出',
+                        type: 'line',
+                        data: amounts,
+                        smooth: true,
+                        symbol: 'circle',
+                        symbolSize: 6,
+                        lineStyle: {
+                            color: '#f44336',
+                            width: 3
+                        },
+                        areaStyle: {
+                            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                                { offset: 0, color: 'rgba(244, 67, 54, 0.3)' },
+                                { offset: 1, color: 'rgba(244, 67, 54, 0.05)' }
+                            ])
+                        },
+                        label: {
+                            show: false
+                        },
+                        markLine: {
+                            data: [
+                                {
+                                    name: '平均值',
+                                    yAxis: avgLine,
+                                    lineStyle: { color: '#9c27b0', type: 'dashed', width: 2 },
+                                    label: { formatter: `平均值: ¥${avgLine.toFixed(2)}`, color: '#9c27b0' }
+                                }
+                            ]
+                        }
+                    }
+                ]
+            };
+            trendChart.setOption(option);
+        }
+        
+        // 加载月份对比
+        async function loadCompare() {
+            const month = document.getElementById('compareMonth').value;
+            if (!month) {
+                showMessage('请选择月份', true);
+                return;
+            }
+            
+            const result = await getCompare(month);
+            console.log('月份对比:', result);
+            
+            if (result.code === 200 && result.data) {
+                const trendIcon = result.data.trend === 'up' ? '📈' : (result.data.trend === 'down' ? '📉' : '➡️');
+                const trendColor = result.data.trend === 'up' ? '#f44336' : (result.data.trend === 'down' ? '#4caf50' : '#888');
+                const changeSign = result.data.change >= 0 ? '+' : '';
+                
+                document.getElementById('compareResult').innerHTML = `
+                    <div style="display: flex; justify-content: space-around; text-align: center; flex-wrap: wrap;">
+                        <div style="padding: 20px; background: #f5f0ff; border-radius: 12px; min-width: 150px;">
+                            <h4>${result.data.current_month}</h4>
+                            <div style="font-size: 1.5rem; color: #f44336; font-weight: bold;">¥${result.data.current_expense.toFixed(2)}</div>
+                            <div style="color: #888;">当前月支出</div>
+                        </div>
+                        <div style="padding: 20px; background: #f5f0ff; border-radius: 12px; min-width: 150px;">
+                            <h4>${result.data.prev_month}</h4>
+                            <div style="font-size: 1.5rem; color: #888; font-weight: bold;">¥${result.data.prev_expense.toFixed(2)}</div>
+                            <div style="color: #888;">上月支出</div>
+                        </div>
+                        <div style="padding: 20px; background: #f5f0ff; border-radius: 12px; min-width: 150px;">
+                            <h4>环比变化 ${trendIcon}</h4>
+                            <div style="font-size: 1.5rem; color: ${trendColor}; font-weight: bold;">${changeSign}¥${result.data.change.toFixed(2)}</div>
+                            <div style="color: ${trendColor};">${result.data.change_rate}%</div>
+                        </div>
+                    </div>
+                `;
+            } else {
+                document.getElementById('compareResult').innerHTML = '<p style="text-align: center; color: #888;">暂无数据</p>';
+            }
+        }
+        
+        // 初始化页面
+        async function init() {
+            if (!isLoggedIn()) {
+                window.location.href = 'login.html';
+                return;
+            }
+            
+            // 设置默认日期（本月）
+            document.getElementById('startDate').value = getMonthStart();
+            document.getElementById('endDate').value = getMonthEnd();
+            
+            // 设置对比月份的默认值为当前月
+            const today = new Date();
+            const currentMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+            document.getElementById('compareMonth').value = currentMonth;
+            
+            // 加载所有数据
+            await loadAllStats();
+            await loadCompare();
+        }
+        
+        // 页面加载时，监听窗口大小变化重新渲染图表
+        window.addEventListener('resize', () => {
+            if (comparisonChart) comparisonChart.resize();
+            if (categoryChart) categoryChart.resize();
+            if (trendChart) trendChart.resize();
+        });
+        
+        // 页面加载
+        init();
+    </script>
+</body>
+</html>

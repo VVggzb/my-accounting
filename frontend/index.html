@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>账本 - 记账助手</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+</head>
+<body>
+    <div class="nav-bar">
+        <h1>💰 记账助手</h1>
+        <div class="nav-links">
+            <a href="index.html" class="active">账本</a>
+            <a href="statistics.html">统计</a>
+            <a href="#" onclick="logout()">退出</a>
+        </div>
+    </div>
+    
+    <div class="container">
+        <!-- 筛选栏 -->
+        <div class="card">
+            <div class="filter-bar">
+                <div class="form-group">
+                    <label>开始日期</label>
+                    <input type="date" id="startDate">
+                </div>
+                <div class="form-group">
+                    <label>结束日期</label>
+                    <input type="date" id="endDate">
+                </div>
+                <div class="form-group">
+                    <label>分类</label>
+                    <select id="categoryFilter">
+                        <option value="">全部分类</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>类型</label>
+                    <select id="typeFilter">
+                        <option value="">全部</option>
+                        <option value="expense">支出</option>
+                        <option value="income">收入</option>
+                    </select>
+                </div>
+                <button class="btn" onclick="loadBills()">筛选</button>
+                <button class="btn btn-outline" onclick="openBillModal()">+ 记一笔</button>
+            </div>
+        </div>
+        
+        <!-- 账单列表 -->
+        <div class="card">
+            <h3>账单列表</h3>
+            <div id="billList">
+                <p style="text-align: center; color: #888;">加载中...</p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 记账模态框（新增/编辑共用）-->
+    <div id="billModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modalTitle">记一笔</h3>
+                <button class="close-btn" onclick="closeBillModal()">&times;</button>
+            </div>
+            <form onsubmit="handleSaveBill(event)">
+                <input type="hidden" id="editBillId" value="">
+                
+                <div class="form-group">
+                    <label>类型</label>
+                    <select id="billType" onchange="updateCategoryOptions()" required>
+                        <option value="expense">支出</option>
+                        <option value="income">收入</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label>分类</label>
+                    <select id="billCategory" required></select>
+                </div>
+                
+                <div class="form-group">
+                    <label>金额</label>
+                    <input type="number" id="billAmount" step="0.01" placeholder="0.00" required>
+                </div>
+                
+                <div class="form-group">
+                    <label>日期</label>
+                    <input type="date" id="billDate" required>
+                </div>
+                
+                <div class="form-group">
+                    <label>账户</label>
+                    <select id="billAccount">
+                        <option value="">请选择账户</option>
+                        <option value="微信">微信</option>
+                        <option value="支付宝">支付宝</option>
+                        <option value="银行卡">银行卡</option>
+                        <option value="现金">现金</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label>备注</label>
+                    <input type="text" id="billNote" placeholder="选填">
+                </div>
+                
+                <div style="display: flex; gap: 10px; margin-top: 20px;">
+                    <button type="submit" class="btn" style="flex: 1;">保存</button>
+                    <button type="button" class="btn btn-outline" onclick="closeBillModal()" style="flex: 1;">取消</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <script src="script.js"></script>
+    <script>
+        let categories = [];
+        let currentEditId = null;
+        
+        // 获取当月第一天
+        function getMonthStart() {
+            const date = new Date();
+            date.setDate(1);
+            return date.toISOString().split('T')[0];
+        }
+        
+        // ============================================================
+        // 创建默认分类（支出8个 + 收入4个）
+        // ============================================================
+        async function createDefaultCategories() {
+            const defaultCategories = [
+                // 支出分类（expense）
+                { name: '餐饮', type: 'expense', icon: '🍜' },
+                { name: '交通', type: 'expense', icon: '🚗' },
+                { name: '购物', type: 'expense', icon: '🛒' },
+                { name: '娱乐', type: 'expense', icon: '🎬' },
+                { name: '房租', type: 'expense', icon: '🏠' },
+                { name: '医疗', type: 'expense', icon: '💊' },
+                { name: '人情', type: 'expense', icon: '🎁' },
+                { name: '学习', type: 'expense', icon: '📚' },
+                // 收入分类（income）
+                { name: '工资', type: 'income', icon: '💰' },
+                { name: '兼职', type: 'income', icon: '💼' },
+                { name: '理财', type: 'income', icon: '📈' },
+                { name: '其他', type: 'income', icon: '📌' }
+            ];
+            
+            for (const cat of defaultCategories) {
+                console.log(`创建分类: ${cat.name}`);
+                await createCategory(cat.name, cat.type, cat.icon);
+            }
+            showMessage('已创建默认分类');
+        }
+        
+        // 加载分类
+        async function loadCategories() {
+            const result = await getCategories();
+            console.log('分类加载结果:', result);
+            
+            if (result.code === 200 && result.data.categories) {
+                categories = result.data.categories;
+                console.log('分类数量:', categories.length);
+                updateCategorySelects();
+            } else {
+                console.log('分类加载失败:', result);
+            }
+        }
+        
+        // 更新所有分类下拉框
+        function updateCategorySelects() {
+            const type = document.getElementById('billType').value;
+            const filtered = categories.filter(c => c.type === type);
+            
+            // 更新账单表单中的分类下拉框
+            const categorySelect = document.getElementById('billCategory');
+            categorySelect.innerHTML = '';
+            if (filtered.length === 0) {
+                const option = document.createElement('option');
+                option.value = '';
+                option.textContent = '请先创建分类';
+                categorySelect.appendChild(option);
+            } else {
+                filtered.forEach(cat => {
+                    const option = document.createElement('option');
+                    option.value = cat.id;
+                    option.textContent = `${cat.icon} ${cat.name}`;
+                    categorySelect.appendChild(option);
+                });
+            }
+            
+            // 更新筛选栏的分类下拉框
+            const filterSelect = document.getElementById('categoryFilter');
+            if (filterSelect) {
+                const currentValue = filterSelect.value;
+                filterSelect.innerHTML = '<option value="">全部分类</option>';
+                categories.forEach(cat => {
+                    const option = document.createElement('option');
+                    option.value = cat.id;
+                    option.textContent = `${cat.icon} ${cat.name}`;
+                    filterSelect.appendChild(option);
+                });
+                filterSelect.value = currentValue;
+            }
+        }
+        
+        function updateCategoryOptions() {
+            updateCategorySelects();
+        }
+        
+        // 加载账单列表
+        async function loadBills() {
+            const params = {
+                start_date: document.getElementById('startDate').value,
+                end_date: document.getElementById('endDate').value,
+                category_id: document.getElementById('categoryFilter').value,
+                type: document.getElementById('typeFilter').value
+            };
+            
+            // 移除空参数
+            Object.keys(params).forEach(key => {
+                if (!params[key]) delete params[key];
+            });
+            
+            const result = await getBills(params);
+            if (result.code === 200) {
+                renderBillList(result.data.bills);
+            } else {
+                document.getElementById('billList').innerHTML = '<p style="text-align: center; color: #888;">加载失败</p>';
+            }
+        }
+        
+        function formatDate(dateStr) {
+            const date = new Date(dateStr);
+            return `${date.getMonth() + 1}月${date.getDate()}日`;
+        }
+        
+        function getCategoryName(categoryId) {
+            const cat = categories.find(c => c.id === categoryId);
+            return cat ? `${cat.icon} ${cat.name}` : '未知';
+        }
+        
+        // ============================================================
+        // 渲染账单列表（带编辑按钮）
+        // ============================================================
+        function renderBillList(bills) {
+            if (!bills || bills.length === 0) {
+                document.getElementById('billList').innerHTML = '<p style="text-align: center; color: #888;">暂无账单</p>';
+                return;
+            }
+            
+            // 按日期分组
+            const grouped = {};
+            bills.forEach(bill => {
+                if (!grouped[bill.date]) {
+                    grouped[bill.date] = [];
+                }
+                grouped[bill.date].push(bill);
+            });
+            
+            let html = '';
+            for (const [date, billsOfDay] of Object.entries(grouped)) {
+                let dayTotal = 0;
+                billsOfDay.forEach(bill => {
+                    if (bill.type === 'expense') dayTotal -= bill.amount;
+                    else dayTotal += bill.amount;
+                });
+                
+                html += `
+                    <div style="margin-bottom: 20px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                            <strong>${formatDate(date)}</strong>
+                            <span style="color: ${dayTotal >= 0 ? '#4caf50' : '#f44336'}">
+                                日结: ${dayTotal >= 0 ? '+' : ''}${dayTotal.toFixed(2)}
+                            </span>
+                        </div>
+                `;
+                
+                billsOfDay.forEach(bill => {
+                    const amountClass = bill.type === 'expense' ? 'bill-amount-expense' : 'bill-amount-income';
+                    const sign = bill.type === 'expense' ? '-' : '+';
+                    
+                    html += `
+                        <div class="bill-item">
+                            <div class="bill-info">
+                                <span class="bill-category">${getCategoryName(bill.category_id)}</span>
+                                <div>
+                                    <div class="bill-name">${bill.note || '无备注'}</div>
+                                    <div class="bill-date">${bill.account || '未填写账户'}</div>
+                                </div>
+                            </div>
+                            <div class="bill-amount ${amountClass}">
+                                ${sign} ¥${bill.amount.toFixed(2)}
+                            </div>
+                            <div class="bill-actions">
+                                <button onclick="openEditBillModal(${bill.id})" title="编辑">✏️</button>
+                                <button onclick="deleteBillConfirm(${bill.id})" title="删除">🗑️</button>
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                html += `</div>`;
+            }
+            
+            document.getElementById('billList').innerHTML = html;
+        }
+        
+        // ============================================================
+        // 打开新增账单弹窗
+        // ============================================================
+        function openBillModal() {
+            currentEditId = null;
+            document.getElementById('editBillId').value = '';
+            document.getElementById('modalTitle').textContent = '记一笔';
+            document.getElementById('billType').value = 'expense';
+            document.getElementById('billAmount').value = '';
+            document.getElementById('billNote').value = '';
+            document.getElementById('billAccount').value = '';
+            document.getElementById('billDate').value = new Date().toISOString().split('T')[0];
+            updateCategoryOptions();
+            document.getElementById('billModal').classList.add('active');
+        }
+        
+        // ============================================================
+        // 打开编辑账单弹窗（加载账单详情）
+        // ============================================================
+        async function openEditBillModal(billId) {
+            currentEditId = billId;
+            
+            // 获取账单详情
+            const result = await getBillDetail(billId);
+            console.log('账单详情:', result);
+            
+            if (result.code === 200 && result.data) {
+                const bill = result.data;
+                document.getElementById('editBillId').value = bill.id;
+                document.getElementById('modalTitle').textContent = '编辑账单';
+                document.getElementById('billType').value = bill.type;
+                document.getElementById('billAmount').value = bill.amount;
+                document.getElementById('billNote').value = bill.note || '';
+                document.getElementById('billAccount').value = bill.account || '';
+                document.getElementById('billDate').value = bill.date;
+                
+                // 更新分类下拉框后设置选中的分类
+                updateCategoryOptions();
+                setTimeout(() => {
+                    document.getElementById('billCategory').value = bill.category_id;
+                }, 50);
+                
+                document.getElementById('billModal').classList.add('active');
+            } else {
+                showMessage(result.message || '加载账单详情失败', true);
+            }
+        }
+        
+        // 获取单条账单详情（需要在 script.js 中添加）
+        async function getBillDetail(billId) {
+            const token = localStorage.getItem('token');
+            const response = await fetch(`${API_BASE}/bill/${billId}`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            return response.json();
+        }
+        
+        function closeBillModal() {
+            document.getElementById('billModal').classList.remove('active');
+            currentEditId = null;
+        }
+        
+        // ============================================================
+        // 保存账单（新增或更新）
+        // ============================================================
+        async function handleSaveBill(event) {
+            event.preventDefault();
+            
+            const editId = document.getElementById('editBillId').value;
+            const categoryId = parseInt(document.getElementById('billCategory').value);
+            const amount = parseFloat(document.getElementById('billAmount').value);
+            const type = document.getElementById('billType').value;
+            const date = document.getElementById('billDate').value;
+            const note = document.getElementById('billNote').value;
+            const account = document.getElementById('billAccount').value;
+            
+            let result;
+            if (editId) {
+                // 更新账单
+                result = await updateBill(editId, {
+                    category_id: categoryId,
+                    amount: amount,
+                    type: type,
+                    date: date,
+                    note: note,
+                    account: account
+                });
+            } else {
+                // 创建账单
+                result = await createBill(categoryId, amount, type, date, note, account);
+            }
+            
+            if (result.code === 200 || result.code === 201) {
+                showMessage(editId ? '更新成功' : '保存成功');
+                closeBillModal();
+                await loadBills();
+            } else {
+                showMessage(result.message || '操作失败', true);
+            }
+        }
+        
+        // 更新账单（需要在 script.js 中添加）
+        async function updateBill(billId, data) {
+            const token = localStorage.getItem('token');
+            const response = await fetch(`${API_BASE}/bill/${billId}`, {
+                method: 'PUT',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(data)
+            });
+            return response.json();
+        }
+        
+        async function deleteBillConfirm(billId) {
+            if (confirm('确定删除这笔账单吗？')) {
+                const result = await deleteBill(billId);
+                if (result.code === 200) {
+                    showMessage('删除成功');
+                    await loadBills();
+                } else {
+                    showMessage('删除失败', true);
+                }
+            }
+        }
+        
+        // 初始化页面
+        async function init() {
+            if (!isLoggedIn()) {
+                window.location.href = 'login.html';
+                return;
+            }
+            
+            // 设置默认日期
+            const today = new Date().toISOString().split('T')[0];
+            document.getElementById('startDate').value = getMonthStart();
+            document.getElementById('endDate').value = today;
+            document.getElementById('billDate').value = today;
+            
+            await loadCategories();
+            
+            // 如果没有分类，自动创建默认分类
+            if (categories.length === 0) {
+                console.log('没有分类，正在创建默认分类...');
+                await createDefaultCategories();
+                await loadCategories();
+            }
+            
+            await loadBills();
+        }
+        
+        // 页面加载
+        init();
+    </script>
+</body>
+</html>
