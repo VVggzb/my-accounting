@@ -142,3 +142,22 @@
             const email = document.getElementById('regEmail').value;
             
             const result = await register(username, password, email);
+            if (result.code === 201) {
+                showMessage('注册成功！请登录');
+                switchTab('login');
+                document.getElementById('loginUsername').value = username;
+                document.getElementById('regUsername').value = '';
+                document.getElementById('regPassword').value = '';
+                document.getElementById('regEmail').value = '';
+            } else {
+                showMessage(result.message || '注册失败', true);
+            }
+        }
+        
+        // 如果已登录，直接跳转
+        if (isLoggedIn()) {
+            window.location.href = 'index.html';
+        }
+    </script>
+</body>
+</html>
