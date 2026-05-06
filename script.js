@@ -1,7 +1,7 @@
 // ============================================================
 // 配置
 // ============================================================
-const API_BASE = 'http://43.103.0.91:5000/api';
+const API_BASE = 'https://gvzbz.fun/api';
 
 // 存储 token
 let authToken = localStorage.getItem('token');
